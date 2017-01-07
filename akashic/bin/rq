@@ -28,6 +28,7 @@ def editData(data):
 
     os.close(fd)
     os.remove(temp_path)
+    return yml
 
 def action_edit(query, filters=None):
     if 'EDITOR' not in os.environ:
@@ -44,7 +45,7 @@ def action_edit(query, filters=None):
         data = [data,]
 
     while True:
-        editData(data)
+        yml = editData(data)
         try:
           data = yaml.load(yml)
           break
@@ -55,7 +56,7 @@ def action_edit(query, filters=None):
 
     for i in data:
         if 'delete' in i and i['delete']:
-            query[0].delete(i).run()
+            query[0].get(i['id']).delete().run()
         elif 'id' in i:
             query[0].replace(i).run()
         else:
@@ -68,20 +69,12 @@ def interact():
 import rethinkdb as r
 r.connect().repl()
 
-import argparse
-try:
-    import argcomplete
-    hasArgcomplete=True
-except ImportError:
-    hasArgcomplete=False
-    print("install the argcomplete library for tab completion.")
-
 parser = argparse.ArgumentParser(description='Edit a rethinkdb table')
 parser.add_argument('paths', type=str, nargs='+',
                     help='list of database.tables to edit')
-parser.add_argument('--repl',"-r", dest='repl', action='store_true',help="Run in a python repl for more complicated queries")
-if hasArgcomplete:
-    argcomplete.autocomplete(parser)
+parser.add_argument('--db', type=str, nargs=1,
+                    help='Which db to edit', default='akashic')
+#parser.add_argument('--repl',"-r", dest='repl', action='store_true',help="Run in a python repl for more complicated queries")
 #parser.add_argument('--remove',"-rm", dest='rm', action='store_cons',help="Deletes a row")
 #parser.add_argument('--no-edit',"-n", dest='noedit', action='store_true',help="Read/write from stdout/in instead of opening vim")
 
@@ -90,29 +83,15 @@ args = parser.parse_args()
 q=[]
 
 for path in args.paths:
-    path = path.split(".")
     items = None
     query = r
-    query = query.db(path[0])
-    query = query.table(path[1])
-    if len(path) == 3:
-        queryString = path[2].split(":")
-        if len(queryString) != 2:
-            items = query.get(path[2])
-        else:
-            items = query.get_all(queryString[1], index=queryString[0])
-    
+    query = query.db(args.db)
+    query = query.table(path)
+    items = [i for i in query.get_all().run()]
     q.append((query,items))
 
 def edit():
     for item in q:
         action_edit(item)
 
-if args.repl:
-    interact()
-
-#elif args.rm:
-#    print(args.rm)
-
-else:
-    edit()
+edit()

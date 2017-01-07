@@ -71,19 +71,21 @@ r.connect(db='akashic').repl()
 
 remoteMe = r.table('dns').get_all(me['name'], index='name').run()
 remoteMe = [i for i in remoteMe]
+
 if len(remoteMe) > 1:
     for i in remoteMe[1:]:
         r.table("dns").get(i['id']).delete().run()
-remoteMe=remoteMe[0]
-
-if remoteMe:
-    newMe = ChainMap(me, remoteMe, default)
-    r.table('dns').replace(newMe).run()
 
 if not remoteMe:
     newMe = ChainMap(me,default)
     r.table('dns').insert(me).run()
+    remoteMe = r.table('dns').get_all(me['name'], index='name').run()
+    remoteMe = [i for i in remoteMe]
+elif remoteMe:
+    newMe = ChainMap(me, remoteMe, default)
+    r.table('dns').replace(newMe).run()
 
+remoteMe=remoteMe[0]
 
 from multiprocessing import Process, Queue
 def dnsFeed(q):
