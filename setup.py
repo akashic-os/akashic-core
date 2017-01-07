@@ -1,6 +1,9 @@
 import os
 from setuptools import setup
 
+from os import listdir
+from os.path import isfile, join
+
 # Utility function to read the README file.
 # Used for the long_description.  It's nice, because now 1) we have a top level
 # README file and 2) it's easier to type in the README file than to put a raw
@@ -19,6 +22,7 @@ setup(
     url = "https://github.com/traverseda/akashic",
     packages=['akashic'],
     long_description=read('README.md'),
+    scripts= ['akashic/bin/'+f for f in listdir('akashic/bin') if isfile(join('akashic/bin', f))],
     classifiers=[
         "Topic :: Utilities",
     ],

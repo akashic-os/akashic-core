@@ -1,3 +1,4 @@
 rethinkdb
 bokeh
+click
 colorama
