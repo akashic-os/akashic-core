@@ -1,35 +1,15 @@
-A tool for viewing/filtering/etc data stored in rethinkdb.
+My "Operating System", a set of tools for viewing and editing data, mostly based
+around the now-defunct rethinkDB.
 
+If there's any tools in here that you'd like to use without the madness of my
+trying to create an "operting system", submit a bug report and I'll see about
+making it work stand alone. Or at least helping you do that work yourself.
 
-# Creating a new command
+Rethinkdb has an abstraction called "changefeeds" which lets you cheaply monitor a query for changes.
 
-We use click, because it seems to have some pretty decent tab completion, and it's not a bad way to define new commands.
+|item|decscription|status|
+|----|------------|------|
+|rq| use vim to edit rethinkdb tables| Works, you can only edit an entire table. No query support.|
+|clusterize.py|Cluster your rethinkdb connections using ssh tunneling| WIP|
+|ti| time tracker | Being rewritten|
 
-It does make some things akward though, like inheretence. To define you own command, and include the standard "connection" code, do
-
-```python
-
-from akashic.connection import connect, connectionDecorators, composed
-
-@click.command()
-@composed(*connectionDecorators)
-def cli(**kwargs):
-    r = connect(**kwargs)
-cli()
-
-
-```
-
-"r" will be a connection to the rethinkdb DB specified, that you can then do your real actions to.
-A bit of a pain, but not too bad.
-
-# Piping Data
-
-How we might go about this, nothing is implemented that uses it.
-
-Like good unix tools, we'd really like it if our text streams could be edited.
-
-Text streams created by these tools will start with #akashic-json {json full of metadata about the query, and how to save changes}.
-By default the only metadata we'll include is the database and table.
-
-We hope this will work alright with tools like [jq](https://robots.thoughtbot.com/jq-is-sed-for-json)

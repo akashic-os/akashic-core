@@ -6,14 +6,23 @@ tables = {
     'dns':{},
     'logs':{},
     'alerts':{},
+    'files':{},
+    'cache':{},
 }
 
 indexes = {
     'dns': ['name'],
+    'cache': ['name'],
+    'files': ['name',],
     'logs': ['tags'],
     'alerts': ['ctime'],
 }
 
+multiIndexes = {
+    'files': ['tags',],
+}
+
+r.db('akashic').table('files').index_create("tags", multi=True)
 
 def ensureDB():
     r.connect().repl()

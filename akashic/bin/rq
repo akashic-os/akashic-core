@@ -10,10 +10,60 @@ import yaml
 import os, sys, subprocess, tempfile
 import argparse
 
+from rethinkdb.ast import RqlBinary
+def filter_DropBinaryData(data):
+    """
+    A filter to drop binary data from our representation.
+    """
+    if type(data) == RqlBinary:
+        return None
+    return data
+
+import dateparser
+import arrow
+def filters_HumanToDate(data):
+    newData=None
+    if type(data) == str:
+        newData = dateparser.parse(data, languages=['en',],settings={'STRICT_PARSING': True})
+    if newData:
+        newData = arrow.get(newData, 'local')
+        newData = newData.to('utc').datetime
+        return newData
+    else:
+        return data
+
+import datetime
+def filters_ForceTimeToUTC(data):
+    if type(data)==datetime.datetime:
+        time = arrow.get(data)
+        time = time.to('utc').datetime
+        return time
+    else:
+        return data
+
+def recursiveMap(function, data):
+    """
+    Runs a function on all objects in a tree,
+    and their children, and their children, etc.
+    """
+    if type(data) == dict:
+        m = map(lambda d: (d[0], recursiveMap(function, d[1])), data.items())
+        return dict(m)
+    elif type(data) == list:
+        return map(lambda data: recursiveMap(function, data), data) 
+    else:
+        return function(data)
+
+filtersToUser=[filter_DropBinaryData,]
+filtersToDb=[filters_HumanToDate,filters_ForceTimeToUTC]
+
 def editData(data):
-    yml = yaml.safe_dump(data, default_flow_style=False, allow_unicode=True)
+    for f in filtersToUser:
+         data = map(lambda data: recursiveMap(f, data), data)
+    yml= yaml.dump_all(list(data), default_flow_style=False, allow_unicode=True, Dumper=Dumper)
+
     cmd = os.getenv('EDITOR')
-    fd, temp_path = tempfile.mkstemp(prefix='revim.')
+    fd, temp_path = tempfile.mkstemp(prefix='rq.')
 
     with open(temp_path, "r+") as f:
         f.write(yml.replace('\n- ', '\n\n- '))
@@ -47,12 +97,16 @@ def action_edit(query, filters=None):
     while True:
         yml = editData(data)
         try:
-          data = yaml.load(yml)
+          data = yaml.load_all(yml, Loader=Loader)
           break
         except Exception as E:
           print("Oops, that YAML didn't appear to be valid!", file=sys.stderr)
           print(E, file=sys.stderr)
           input("Press Enter to continue...")
+
+    for f in filtersToDb:
+        data = map(lambda data: recursiveMap(f, data), data)
+        data = [i for i in data]
 
     for i in data:
         if 'delete' in i and i['delete']:
