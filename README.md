@@ -18,7 +18,7 @@ Rethinkdb has an abstraction called "changefeeds" which lets you cheaply monitor
 |item|decscription|status|
 |----|------------|------|
 |rq| use vim to edit rethinkdb tables| Works, you can only edit an entire table. No query support.|
-|clusterize.py|Cluster your rethinkdb connections using ssh tunneling,
+|clusterize.py|Cluster your rethinkdb connections using ssh tunneling,\
 optionally generate cjdns config for unified IP namespace that works over lan| WIP|
 |ti| time tracker | Being rewritten|
 |afs|A tag-based FUSE filesystem backed by rethinkdb | WIP |
