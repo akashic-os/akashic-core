@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+from __future__ import print_function, absolute_import, division
+
+import logging
+
+from collections import defaultdict
+from errno import ENOENT
+from stat import S_IFDIR, S_IFLNK, S_IFREG
+from sys import argv, exit
+from time import time
+
+from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+
+import rethinkdb as r
+
+defaultConf = {
+    'dirs':40,
+    'showYaml':False,
+    'faceted_nav':True, #Show how many files exist beneath tag
+#    'files':10000;
+}
+
+import os, sys
+def splitall(path, removeFacets=True):
+    allparts = []
+    while 1:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path: # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    return allparts
+
+if not hasattr(__builtins__, 'bytes'):
+    bytes = str
+
+class Memory(LoggingMixIn, Operations):
+    'Example memory filesystem. Supports only one level of files.'
+
+    def __init__(self):
+        self.connection = r.connect()
+        self.tags= r.db('akashic').table("files").group({'index': "tags"}).count().run(self.connection)
+        print(self.tags)
+        self.files = {}
+        self.data = defaultdict(bytes)
+        self.fd = 0
+        now = time()
+        self.files['/'] = dict(st_mode=(S_IFDIR | 0o755), st_ctime=now,
+                               st_mtime=now, st_atime=now, st_nlink=2)
+
+    def create(self, path, mode):
+        self.files[path] = dict(st_mode=(S_IFREG | mode), st_nlink=1,
+                                st_size=0, st_ctime=time(), st_mtime=time(),
+                                st_atime=time())
+
+        self.fd += 1
+        return self.fd
+
+    def getattr(self, path, fh=None):
+        if path not in self.files:
+            raise FuseOSError(ENOENT)
+        return self.files[path]
+
+    def getxattr(self, path, name, position=0):
+        attrs = self.files[path].get('attrs', {})
+
+        try:
+            return attrs[name]
+        except KeyError:
+            return ''       # Should return ENOATTR
+
+    def listxattr(self, path):
+        attrs = self.files[path].get('attrs', {})
+        return attrs.keys()
+
+    def mkdir(self, path, mode):
+        self.files[path] = dict(st_mode=(S_IFDIR | mode), st_nlink=2,
+                                st_size=0, st_ctime=time(), st_mtime=time(),
+                                st_atime=time())
+        self.files['/']['st_nlink'] += 1
+
+    def open(self, path, flags):
+        self.fd += 1
+        print("self.fd is " + str(self.fd))
+        return self.fd
+
+    def read(self, path, size, offset, fh):
+        base, name = os.path.split(path)
+        print("looking for file "+name)
+        matching = [i for i in r.db('akashic').table("files").get_all(name, index="name").run(self.connection)]
+        return self.data[path][offset:offset + size]
+
+    def readdir(self, path, fh):
+        allFiles =  [i.name for i in r.db('akashic').table("files").get_all().run(self.connection)]
+        print(allFiles)
+        return ['.', '..'] + allFiles
+
+    def readlink(self, path):
+        return self.data[path]
+
+    def removexattr(self, path, name):
+        attrs = self.files[path].get('attrs', {})
+
+        try:
+            del attrs[name]
+        except KeyError:
+            pass        # Should return ENOATTR
+
+    def rename(self, old, new):
+        self.files[new] = self.files.pop(old)
+
+    def rmdir(self, path):
+        self.files.pop(path)
+        self.files['/']['st_nlink'] -= 1
+
+    def setxattr(self, path, name, value, options, position=0):
+        # Ignore options
+        attrs = self.files[path].setdefault('attrs', {})
+        attrs[name] = value
+
+    def statfs(self, path):
+        return dict(f_bsize=512, f_blocks=4096, f_bavail=2048)
+
+    def symlink(self, target, source):
+        self.files[target] = dict(st_mode=(S_IFLNK | 0o777), st_nlink=1,
+                                  st_size=len(source))
+
+        self.data[target] = source
+
+    def truncate(self, path, length, fh=None):
+        self.data[path] = self.data[path][:length]
+        self.files[path]['st_size'] = length
+
+    def unlink(self, path):
+        self.files.pop(path)
+
+    def utimens(self, path, times=None):
+        now = time()
+        atime, mtime = times if times else (now, now)
+        self.files[path]['st_atime'] = atime
+        self.files[path]['st_mtime'] = mtime
+
+    def write(self, path, data, offset, fh):
+        base, name = os.path.split(path)
+        tags = splitall(base)
+        matching = [i for i in r.db('akashic').table("files").get_all(name, index="name").run(self.connection)]
+        matchCount = len(matching)
+        data = self.data[path][:offset] + data
+        if matchCount == 1:
+            print(matching[0])
+        elif matchCount == 0:
+            r.db('akashic').table("files").insert({'name':name, 'content-file':data}).run(self.connection)
+        return len(data)
+
+
+if __name__ == '__main__':
+    if len(argv) != 2:
+        print('usage: %s <mountpoint>' % argv[0])
+        exit(1)
+
+    logging.basicConfig(level=logging.INFO)
+    fuse = FUSE(Memory(), argv[1], foreground=True)

@@ -7,11 +7,12 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 import yaml
+import ruamel.yaml
 import os, sys, subprocess, tempfile
 import argparse
 
 from rethinkdb.ast import RqlBinary
-def filter_DropBinaryData(data):
+def filters_DropBinaryData(data):
     """
     A filter to drop binary data from our representation.
     """
@@ -41,25 +42,44 @@ def filters_ForceTimeToUTC(data):
     else:
         return data
 
-def recursiveMap(function, data):
+def filters_HumanizeTime(data):
+    if type(data)==datetime.datetime:
+        time=arrow.get(data)
+        time = time.to('local')
+        return time.datetime
+#        return "{} #{}".format(time.format(), time.humanize())
+    else:
+        return data
+
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
+def filters_EnableComments(data):
+    if type(data) == dict:
+        return CommentedMap(**data)
+    elif type(data) == list:
+        return CommentedSeq(*data)
+    else:
+        return data
+
+def recursiveMap(filterSet, data):
     """
-    Runs a function on all objects in a tree,
+    Runs a list of function on all objects in a tree,
     and their children, and their children, etc.
     """
     if type(data) == dict:
-        m = map(lambda d: (d[0], recursiveMap(function, d[1])), data.items())
+        m = map(lambda d: (d[0], recursiveMap(filterSet, d[1])), data.items())
         return dict(m)
     elif type(data) == list:
-        return map(lambda data: recursiveMap(function, data), data) 
+        return map(lambda data: recursiveMap(filterSet, data), data) 
     else:
-        return function(data)
+        for f in filterSet:
+            data=f(data)
+        return data
 
-filtersToUser=[filter_DropBinaryData,]
+filtersToUser=[filters_DropBinaryData,filters_EnableComments,filters_HumanizeTime]
 filtersToDb=[filters_HumanToDate,filters_ForceTimeToUTC]
 
 def editData(data):
-    for f in filtersToUser:
-         data = map(lambda data: recursiveMap(f, data), data)
+    data = map(lambda data: recursiveMap(filtersToUser, data,), data)
     yml= yaml.dump_all(list(data), default_flow_style=False, allow_unicode=True, Dumper=Dumper)
 
     cmd = os.getenv('EDITOR')
@@ -84,11 +104,7 @@ def action_edit(query, filters=None):
     if 'EDITOR' not in os.environ:
         print("Please set the 'EDITOR' environment variable", file=sys.stderr)
         raise SystemExit(1)
- 
-    if query[1]:
-        data = query[1].run()
-    else:
-        data = query[0].run()
+    data = query.run(conn)
     if type(data) not in (list,str,dict):
         data = [item for item in data]
     else:
@@ -104,24 +120,21 @@ def action_edit(query, filters=None):
           print(E, file=sys.stderr)
           input("Press Enter to continue...")
 
-    for f in filtersToDb:
-        data = map(lambda data: recursiveMap(f, data), data)
-        data = [i for i in data]
+    data = map(lambda data: recursiveMap(filtersToDb, data,), data)
 
     for i in data:
         if 'delete' in i and i['delete']:
-            query[0].get(i['id']).delete().run()
+            query[0].get(i['id']).delete().run(conn)
         elif 'id' in i:
-            query[0].replace(i).run()
+            query[0].replace(i).run(conn)
         else:
-            query[0].insert(i).run()
+            query[0].insert(i).run(conn)
 
 def interact():
     import code
     code.InteractiveConsole(locals=globals()).interact()
 
 import rethinkdb as r
-r.connect().repl()
 
 parser = argparse.ArgumentParser(description='Edit a rethinkdb table')
 parser.add_argument('paths', type=str, nargs='+',
@@ -136,13 +149,14 @@ args = parser.parse_args()
 
 q=[]
 
+conn = r.connect()
+
 for path in args.paths:
     items = None
     query = r
     query = query.db(args.db)
     query = query.table(path)
-    items = [i for i in query.get_all().run()]
-    q.append((query,items))
+    q.append(query)
 
 def edit():
     for item in q:
