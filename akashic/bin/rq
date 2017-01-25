@@ -100,7 +100,7 @@ def editData(data):
     os.remove(temp_path)
     return yml
 
-def action_edit(query, filters=None):
+def action_edit(query, conn, filters=None):
     if 'EDITOR' not in os.environ:
         print("Please set the 'EDITOR' environment variable", file=sys.stderr)
         raise SystemExit(1)
@@ -130,36 +130,30 @@ def action_edit(query, filters=None):
         else:
             query[0].insert(i).run(conn)
 
-def interact():
-    import code
-    code.InteractiveConsole(locals=globals()).interact()
-
 import rethinkdb as r
+parser = argparse.ArgumentParser(description='Edit a rethinkdb table',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+parser.add_argument('query', type=str, nargs='?',
+                    help='table to edit. Will expand in the future.')
+parser.add_argument('--list-tables', action='store_true',
+                    help='List all tables in current DB')
+parser.add_argument('--list-dbs', action='store_true',
+                    help='List all the databases available')
+from akashic.db import addConnToParser, connectFromArgs
+addConnToParser(parser)
 
-parser = argparse.ArgumentParser(description='Edit a rethinkdb table')
-parser.add_argument('paths', type=str, nargs='+',
-                    help='list of database.tables to edit')
-parser.add_argument('--db', type=str, nargs=1,
-                    help='Which db to edit', default='akashic')
-#parser.add_argument('--repl',"-r", dest='repl', action='store_true',help="Run in a python repl for more complicated queries")
-#parser.add_argument('--remove',"-rm", dest='rm', action='store_cons',help="Deletes a row")
-#parser.add_argument('--no-edit',"-n", dest='noedit', action='store_true',help="Read/write from stdout/in instead of opening vim")
-
-args = parser.parse_args()
-
-q=[]
-
-conn = r.connect()
-
-for path in args.paths:
-    items = None
-    query = r
-    query = query.db(args.db)
-    query = query.table(path)
-    q.append(query)
-
-def edit():
-    for item in q:
-        action_edit(item)
-
-edit()
+if __name__ == '__main__':
+    args = parser.parse_args()
+    if args.list_dbs:
+        conn = r.connect()
+        dbs = r.db_list().run(conn)
+        print(dbs)
+    conn = connectFromArgs(args)
+    if args.list_tables:
+        tables = r.table_list().run(conn)
+        print(tables)
+    if args.query:
+        query = r
+        query = query.table(args.query)
+        action_edit(query, conn)
