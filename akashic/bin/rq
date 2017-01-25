@@ -136,6 +136,8 @@ parser = argparse.ArgumentParser(description='Edit a rethinkdb table',
     )
 parser.add_argument('query', type=str, nargs='?',
                     help='table to edit. Will expand in the future.')
+parser.add_argument('--limit', type=int, default=200,
+                    help='How many rows to retrieve, maximum')
 parser.add_argument('--list-tables', action='store_true',
                     help='List all tables in current DB')
 parser.add_argument('--list-dbs', action='store_true',
@@ -156,4 +158,5 @@ if __name__ == '__main__':
     if args.query:
         query = r
         query = query.table(args.query)
+        query = query.limit(args.limit)
         action_edit(query, conn)
