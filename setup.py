@@ -23,6 +23,8 @@ setup(
     install_requires=[
         "rethinkdb",
         "arrow",
+        "deepdiff",
+        "marshmallow",
     ],
     packages=['akashic'],
     long_description=read('README.md'),

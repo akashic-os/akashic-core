@@ -2,6 +2,12 @@ My "Operating System", a set of tools for viewing and editing data, mostly based
 around rethinkDB (the company behind which went out of business, but I think the
 db will still get some love).
 
+Install with
+
+    git clone https://github.com/akashic-os/akashic-core.git
+    cd akashic-core
+    python3 setup.py develop --user
+
 Not a kernel, or an actual OS. An OS in the same way gnu is an OS, or a web
 browser is an OS.
 
@@ -15,10 +21,39 @@ making it work stand alone. Or at least helping you do that work yourself.
 
 Rethinkdb has an abstraction called "changefeeds" which lets you cheaply monitor a query for changes.
 
-|item|decscription|status|
-|----|------------|------|
-|rq| use vim to edit rethinkdb tables| Works, you can only edit an entire table. No query support.|
-|clusterize.py|Cluster your rethinkdb connections using ssh tunneling,\
-optionally generate cjdns config for unified IP namespace that works over lan| WIP|
-|ti| time tracker | Being rewritten|
-|afs|A tag-based FUSE filesystem backed by rethinkdb | WIP |
+#Todo
+
+##Tools
+
+ - [X] rq, edit your data using vim and yaml. Very basic query support
+  - [] Make rethinkdb support DeepDiff diffs so that we can edit objects with
+    binary data in them.
+  - [] Make use of yaml tags for transforming data (humanizing dates, on both
+    input and output).
+
+ - [] afs, a tagged filesystem implemenation for rethinkdb
+  - [] get basic implementation up and running
+  - [] add some test cases (fusepy should make this real easy, but it does't)
+
+ - [] Extend pythons logging to support data objects
+
+ - [] Add an RPC layer (maybe based on hug?)
+
+##Daemons
+
+ - [] dbus notification support for "alerts" table
+ - [] generate notifications from query
+
+ - [] Add metadata to image files
+ - [] Add metadata to movie files
+ - [] Add metadata to audio files
+ - [] Thumbnail stuff
+
+ - [] caldav/carddav server for synchronizing contacts and the like
+
+#Android-native
+
+ - [] get rethinkdb running an android at all
+ - [] notification support for "alerts" table
+ - [] contact synchronization
+ - [] share file on afs

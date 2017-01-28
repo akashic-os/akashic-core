@@ -29,7 +29,6 @@ from marshmallow import Schema, fields, pprint
 from json import loads
 from collections import ChainMap
 
-
 def jsonip():
     return loads(requests.get('http://jsonip.com').text)['ip']
 def ippl():

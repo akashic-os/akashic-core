@@ -44,8 +44,8 @@ class Memory(LoggingMixIn, Operations):
 
     def __init__(self):
         self.connection = r.connect()
-        self.tags= r.db('akashic').table("files").group({'index': "tags"}).count().run(self.connection)
-        print(self.tags)
+        #self.tags= r.db('akashic').table("files").group({'index': "tags"}).count().run(self.connection)
+        #print(self.tags)
         self.files = {}
         self.data = defaultdict(bytes)
         self.fd = 0
@@ -93,7 +93,8 @@ class Memory(LoggingMixIn, Operations):
         base, name = os.path.split(path)
         print("looking for file "+name)
         matching = [i for i in r.db('akashic').table("files").get_all(name, index="name").run(self.connection)]
-        return self.data[path][offset:offset + size]
+        print(matching[0])
+        return matching[0]['content-file']
 
     def readdir(self, path, fh):
         allFiles =  [i.name for i in r.db('akashic').table("files").get_all().run(self.connection)]
@@ -151,10 +152,7 @@ class Memory(LoggingMixIn, Operations):
         matching = [i for i in r.db('akashic').table("files").get_all(name, index="name").run(self.connection)]
         matchCount = len(matching)
         data = self.data[path][:offset] + data
-        if matchCount == 1:
-            print(matching[0])
-        elif matchCount == 0:
-            r.db('akashic').table("files").insert({'name':name, 'content-file':data}).run(self.connection)
+        r.db('akashic').table("files").insert({'name':name, 'content-file':data}).run(self.connection)
         return len(data)
 
 

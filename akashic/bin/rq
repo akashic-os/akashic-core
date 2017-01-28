@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 # encoding: utf-8
+from akashic.db import addConnToParser, connectFromArgs
+import rethinkdb as r
+import os, sys, subprocess, tempfile, argparse
+from collections import namedtuple
+from deepdiff import DeepDiff
 
 from yaml import load, dump
 try:
@@ -7,80 +12,9 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 import yaml
-import ruamel.yaml
-import os, sys, subprocess, tempfile
-import argparse
 
-from rethinkdb.ast import RqlBinary
-def filters_DropBinaryData(data):
-    """
-    A filter to drop binary data from our representation.
-    """
-    if type(data) == RqlBinary:
-        return None
-    return data
-
-import dateparser
-import arrow
-def filters_HumanToDate(data):
-    newData=None
-    if type(data) == str:
-        newData = dateparser.parse(data, languages=['en',],settings={'STRICT_PARSING': True})
-    if newData:
-        newData = arrow.get(newData, 'local')
-        newData = newData.to('utc').datetime
-        return newData
-    else:
-        return data
-
-import datetime
-def filters_ForceTimeToUTC(data):
-    if type(data)==datetime.datetime:
-        time = arrow.get(data)
-        time = time.to('utc').datetime
-        return time
-    else:
-        return data
-
-def filters_HumanizeTime(data):
-    if type(data)==datetime.datetime:
-        time=arrow.get(data)
-        time = time.to('local')
-        return time.datetime
-#        return "{} #{}".format(time.format(), time.humanize())
-    else:
-        return data
-
-from ruamel.yaml.comments import CommentedMap, CommentedSeq
-def filters_EnableComments(data):
-    if type(data) == dict:
-        return CommentedMap(**data)
-    elif type(data) == list:
-        return CommentedSeq(*data)
-    else:
-        return data
-
-def recursiveMap(filterSet, data):
-    """
-    Runs a list of function on all objects in a tree,
-    and their children, and their children, etc.
-    """
-    if type(data) == dict:
-        m = map(lambda d: (d[0], recursiveMap(filterSet, d[1])), data.items())
-        return dict(m)
-    elif type(data) == list:
-        return map(lambda data: recursiveMap(filterSet, data), data) 
-    else:
-        for f in filterSet:
-            data=f(data)
-        return data
-
-filtersToUser=[filters_DropBinaryData,filters_EnableComments,filters_HumanizeTime]
-filtersToDb=[filters_HumanToDate,filters_ForceTimeToUTC]
-
-def editData(data):
-    data = map(lambda data: recursiveMap(filtersToUser, data,), data)
-    yml= yaml.dump_all(list(data), default_flow_style=False, allow_unicode=True, Dumper=Dumper)
+def editDataAsText(data):
+    yml = yaml.dump_all(data, default_flow_style=False, allow_unicode=True, Dumper=Dumper)
 
     cmd = os.getenv('EDITOR')
     fd, temp_path = tempfile.mkstemp(prefix='rq.')
@@ -100,52 +34,93 @@ def editData(data):
     os.remove(temp_path)
     return yml
 
-def action_edit(query, conn, filters=None):
-    if 'EDITOR' not in os.environ:
-        print("Please set the 'EDITOR' environment variable", file=sys.stderr)
-        raise SystemExit(1)
-    data = query.run(conn)
-    if type(data) not in (list,str,dict):
-        data = [item for item in data]
+from rethinkdb.ast import RqlBinary
+def processQueryResult(data):
+    """
+    Right now all this does is drop RqlBinary data
+    """
+    if type(data)==dict:
+        return {k:v for k,v in data.items() if type(v) != RqlBinary}
+    elif type(data)==list:
+        return [v for v in data if type(v) != RqlBinary]
     else:
-        data = [data,]
+        return data
 
+def diffUnpack(diff):
+    """
+    Do not ask me how deepcopy works. I do not know.
+    It is a mystery. You'd figure the results of this
+    would be the default, since you can do
+
+        obj = someDictSomewhere
+        for i in objectPath:
+            obj=obj[i]
+    to evauluate a path without eval-ing.
+    but whatever.
+    """
+    level = diff.all_up
+    items=[]
+    while level:
+        next_rel = level.t1_child_rel or level.t2_child_rel
+        if next_rel is None:
+            break
+        items.append(next_rel.param)
+        level = level.down
+    return items
+
+def applyDiff(orig, new, conn):
+    """
+    Apply a python DeepDiff changeset to a rethinkdb object.
+    """
+    diff = DeepDiff(orig, new, ignore_order=True, view='tree')
+    if 'dictionary_item_removed' in diff:
+        removed = [diffUnpack(i) for i in diff['dictionary_item_removed']]
+        print(orig)
+        print(baseQuery.get(orig['id']).set_difference(removed).run(conn))
+        orig.update(lambda d:
+            d.set_difference([i for i in removed])
+        ).run(conn)
+        print(removed)
+
+def editLoop(query, basequery, conn):
+    data = list(processQueryResult(query.run(conn)))
+    dataCache = {v['id']:v for v in data}
     while True:
-        yml = editData(data)
         try:
-          data = yaml.load_all(yml, Loader=Loader)
-          break
+            rawyml = editDataAsText(data)
+            newdata = yaml.load_all(rawyml)
+            break
         except Exception as E:
-          print("Oops, that YAML didn't appear to be valid!", file=sys.stderr)
-          print(E, file=sys.stderr)
-          input("Press Enter to continue...")
+            print("Oops, that YAML didn't appear to be valid!", file=sys.stderr)
+            print(E, file=sys.stderr)
+            input("Press Enter to continue...")
 
-    data = map(lambda data: recursiveMap(filtersToDb, data,), data)
-
-    for i in data:
-        if 'delete' in i and i['delete']:
-            query[0].get(i['id']).delete().run(conn)
-        elif 'id' in i:
-            query[0].replace(i).run(conn)
+    insertdata = []
+    for datum in newdata:
+        if 'id' in datum:
+            orig = dataCache[datum['id']]
+            diff = applyDiff(orig, datum, conn)
         else:
-            query[0].insert(i).run(conn)
+            insertdata.append(datum)
+    basequery.insert(insertdata).run(conn)
 
-import rethinkdb as r
-parser = argparse.ArgumentParser(description='Edit a rethinkdb table',
-    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-parser.add_argument('query', type=str, nargs='?',
-                    help='table to edit. Will expand in the future.')
-parser.add_argument('--limit', type=int, default=200,
-                    help='How many rows to retrieve, maximum')
-parser.add_argument('--list-tables', action='store_true',
-                    help='List all tables in current DB')
-parser.add_argument('--list-dbs', action='store_true',
-                    help='List all the databases available')
-from akashic.db import addConnToParser, connectFromArgs
-addConnToParser(parser)
+def setupParser():
+    parser = argparse.ArgumentParser(description='Edit a rethinkdb table',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+    parser.add_argument('query', type=str, nargs='?',
+                        help='table to edit. Will expand in the future.')
+    parser.add_argument('--limit', type=int, default=200,
+                        help='How many rows to retrieve, maximum')
+    parser.add_argument('--list-tables', action='store_true',
+                        help='List all tables in current DB')
+    parser.add_argument('--list-dbs', action='store_true',
+                        help='List all the databases available')
+    addConnToParser(parser)
+    return parser
 
 if __name__ == '__main__':
+    parser=setupParser()
     args = parser.parse_args()
     if args.list_dbs:
         conn = r.connect()
@@ -157,6 +132,8 @@ if __name__ == '__main__':
         print(tables)
     if args.query:
         query = r
-        query = query.table(args.query)
-        query = query.limit(args.limit)
-        action_edit(query, conn)
+        global baseQuery
+        baseQuery = query.table(args.query)
+        query = baseQuery.limit(args.limit)
+        editLoop(query, baseQuery, conn)
+
