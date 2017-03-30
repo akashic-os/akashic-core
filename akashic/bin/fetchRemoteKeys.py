@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 '''
-Use github to manage your ssh keys, since you probably already do.
+Use github to manage your ssh logins, since you probably already manage your keys with it.
 Centralizing your key management should actually make you more secure,
 presuming that you trust github and the infrastructure between you and them.
 Including this script...
