@@ -55,6 +55,7 @@ def diffUnpack(diff):
         obj = someDictSomewhere
         for i in objectPath:
             obj=obj[i]
+
     to evauluate a path without eval-ing.
     but whatever.
     """
@@ -68,19 +69,37 @@ def diffUnpack(diff):
         level = level.down
     return items
 
+def lambdaCreator(removed):
+    """
+    Does this exist becouse I am bad at functional programming,
+    or becouse this framework is... silly?
+    or maybe it's python's fault, and multi line lambdas aren't
+    an awful idea that will lead to horrible sphegetti code.
+    """
+    for i in removed:
+        pass
+
+    return 
+
 def applyDiff(orig, new, conn):
     """
     Apply a python DeepDiff changeset to a rethinkdb object.
     """
     diff = DeepDiff(orig, new, ignore_order=True, view='tree')
+    print(diff)
+    print(diffUnpack(diff['dictionary_item_added']))
     if 'dictionary_item_removed' in diff:
         removed = [diffUnpack(i) for i in diff['dictionary_item_removed']]
-        print(orig)
-        print(baseQuery.get(orig['id']).set_difference(removed).run(conn))
-        orig.update(lambda d:
-            d.set_difference([i for i in removed])
-        ).run(conn)
-        print(removed)
+        print("original: "+str(orig))
+        print("listOfThignsToRemove: "+str(removed))
+        print("difference: "+str(baseQuery.get(orig['id']).coerce_to("array").difference(removed).coerce_to("object").run(conn)))
+#        baseQuery.get(orig['id']).update(lambda doc:
+#            doc.coerce_to("array").difference(removed)
+#        ).run(conn)
+
+#        orig.update(lambda d:
+#            d.set_difference([i for i in removed])
+#        ).run(conn)
 
 def editLoop(query, basequery, conn):
     data = list(processQueryResult(query.run(conn)))

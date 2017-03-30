@@ -11,6 +11,9 @@ from os.path import isfile, join
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
+scripts = ['akashic/bin/'+f for f in listdir('akashic/bin') if isfile(join('akashic/bin', f))]
+print(scripts)
+
 setup(
     name = "akashic",
     version = "0.0.1",
@@ -28,8 +31,8 @@ setup(
     ],
     packages=['akashic'],
     long_description=read('README.md'),
-    scripts= ['akashic/bin/'+f for f in listdir('akashic/bin') if isfile(join('akashic/bin', f))],
-    classifiers=[
-        "Topic :: Utilities",
-    ],
+    scripts= scripts,
+#    classifiers=[
+#        "Topic :: Utilities",
+#    ],
 )

@@ -1,8 +1,10 @@
 #!/usr/bin/env python
+
 '''
 Use github to manage your ssh keys, since you probably already do.
 Centralizing your key management should actually make you more secure,
 presuming that you trust github and the infrastructure between you and them.
+Including this script...
 Run it without any args to see what users are allowed, which should help
 you keep things secure.
 
@@ -13,23 +15,31 @@ This aims to be a bit more secure then just using a shell script with
 
     curl -sf https://github.com/$1.keys
 
-in it.
+in it. All the permision code is in the `checkUser` function.
+
+Always check what users are allowed by running `/opt/fetchRemoteKeys.py`
 
 Configure as follows.
+```
+sudo groupadd gitusers
+sudo usermode -a -G gitusers $SomeUserName
+
+/opt/fetchRemoteKeys.py #Presuming you wgeted this script...
 
 #/etc/sshd/sshd_config
-AuthorizedKeysCommand      /opt/sshKeys.py
+AuthorizedKeysCommand      /opt/fetchRemoteKeys.py
 AuthorizedKeysCommandUser  nobody
 
-chmod 555 /opt/sshKeys.py
-chmod +x /opt/sshKeys.py
-chown root:root /opt/sshKeys.py
+chmod 555 /opt/fetchRemoteKeys.py
+chmod +x /opt/fetchRemoteKeys.py
+chown root:root /opt/fetchRemoteKeys.py
+```
 '''
 
 import grp, pwd, sys, requests
 
 #Settings
-allowedGroups= ['users',]
+allowedGroups= ['gitusers',]
 disallowedGroups= []
 keyString="https://github.com/{}.keys"#Keystring for github. There are probably other services that follow this methodology.
 
@@ -54,7 +64,7 @@ def checkUser(username):
 
 if len(sys.argv)==2:
     if checkUser(sys.argv[1]):
-        response = requests.get(keyString.format(sys.argv[1]))
+        response = requests.get(keyString.format(sys.argv[1]), verify=True)
         if response.status_code == 200:
             print(response.text)
 
